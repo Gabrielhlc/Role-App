@@ -1,0 +1,274 @@
+import { Router, type Response } from "express";
+import { prisma } from "../config/db.js";
+import {
+  requireAuth,
+  type AuthenticatedRequest,
+} from "../middlewares/auth.middleware.js";
+
+const router = Router();
+
+router.use(requireAuth);
+
+function generateRoomCode(length = 4): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let code = "";
+  for (let i = 0; i < length; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+router.post(
+  "/create",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { name } = req.body;
+
+    const hostId = req.user?.userId;
+
+    if (!name || typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "O nome do evento é obrigatório." });
+    }
+
+    // caso o middleware passe sem o userId por alguma loucura
+    if (!hostId) {
+      return res
+        .status(401)
+        .json({ error: "Usuário não identificado. Autenticação necessária." });
+    }
+
+    try {
+      let code = generateRoomCode();
+      let isUnique = false;
+      let attempts = 0;
+
+      while (!isUnique && attempts < 5) {
+        const existingRoom = await prisma.room.findUnique({
+          where: { code },
+        });
+
+        if (!existingRoom) {
+          isUnique = true;
+        } else {
+          code = generateRoomCode();
+          attempts++;
+        }
+      }
+
+      if (!isUnique) {
+        return res.status(500).json({
+          error:
+            "Não foi possível gerar um código de sala exclusivo. Tente novamente.",
+        });
+      }
+
+      const newRoom = await prisma.room.create({
+        data: {
+          name: name.trim(),
+          code: code,
+          hostId: hostId,
+          status: "active",
+          participants: {
+            create: {
+              userId: hostId,
+            },
+          },
+        },
+
+        include: {
+          host: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      return res.status(201).json(newRoom);
+    } catch (error) {
+      console.error("Erro na criação de sala no Prisma:", error);
+      return res
+        .status(500)
+        .json({ error: "Erro interno do servidor ao criar a sala." });
+    }
+  },
+);
+
+router.get(
+  "/my-rooms",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Usuário não autenticado." });
+    }
+
+    try {
+      const rooms = await prisma.room.findMany({
+        where: {
+          OR: [{ hostId: userId }, { participants: { some: { userId } } }],
+        },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          hostId: true,
+          createdAt: true,
+          _count: {
+            select: { participants: true },
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+
+      return res.status(200).json(rooms);
+    } catch (error) {
+      console.error("Erro ao buscar salas do usuário:", error);
+      return res
+        .status(500)
+        .json({ error: "Erro interno ao buscar as salas." });
+    }
+  },
+);
+
+// router.get(
+//   "/:id/participants",
+//   requireAuth,
+//   async (req: AuthenticatedRequest, res: Response) => {
+//     const { id } = req.params;
+
+//     if (typeof id !== "string") {
+//       return res.status(400).json({ error: "ID de sala inválido." });
+//     }
+
+//     try {
+//       const room = await prisma.room.findUnique({
+//         where: { id },
+//         select: {
+//           id: true,
+//           hostId: true,
+//         },
+//       });
+
+//       if (!room) {
+//         return res.status(404).json({ error: "Sala não encontrada." });
+//       }
+
+//       const participants = await prisma.roomParticipant.findMany({
+//         where: { roomId: id },
+//         include: {
+//           user: {
+//             select: {
+//               id: true,
+//               username: true,
+//               email: true,
+//               avatarUrl: true,
+//             },
+//           },
+//         },
+//         orderBy: {
+//           joinedAt: "asc",
+//         },
+//       });
+
+//       const formattedParticipants = participants.map((p) => ({
+//         id: p.user.id,
+//         username: p.user.username,
+//         email: p.user.email,
+//         avatarUrl: p.user.avatarUrl,
+//         isHost: p.user.id === room.hostId,
+//         joinedAt: p.joinedAt,
+//       }));
+
+//       return res.status(200).json(formattedParticipants);
+//     } catch (error) {
+//       console.error("Erro ao buscar participantes da sala:", error);
+//       return res
+//         .status(500)
+//         .json({ error: "Erro interno ao buscar participantes." });
+//     }
+//   },
+// );
+
+router.post(
+  "/:id/join",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res
+        .status(401)
+        .json({ error: "Usuário não identificado. Autenticação necessária." });
+    }
+
+    if (typeof id !== "string") {
+      return res.status(400).json({ error: "ID de sala inválido." });
+    }
+
+    try {
+      // 1. Verifica se a sala realmente existe
+      const room = await prisma.room.findUnique({
+        where: { id },
+      });
+
+      if (!room) {
+        return res.status(404).json({ error: "Sala não encontrada." });
+      }
+
+      const existingParticipant = await prisma.roomParticipant.findFirst({
+        where: {
+          roomId: id,
+          userId: userId,
+        },
+      });
+
+      if (!existingParticipant) {
+        console.log("CRIANDO O USUÁRIO DENTRO DA SALA");
+        await prisma.roomParticipant.create({
+          data: {
+            roomId: id,
+            userId: userId,
+          },
+        });
+      }
+
+      // 4. Retorna os dados atualizados da sala com a lista de participantes e informações do Host
+      const roomDetails = await prisma.room.findUnique({
+        where: { id },
+        include: {
+          host: {
+            select: { id: true, username: true, email: true, avatarUrl: true },
+          },
+          participants: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  email: true,
+                  avatarUrl: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return res.status(200).json(roomDetails);
+    } catch (error) {
+      console.error("Erro ao entrar na sala:", error);
+      return res
+        .status(500)
+        .json({ error: "Erro interno ao registrar entrada na sala." });
+    }
+  },
+);
+
+export default router;

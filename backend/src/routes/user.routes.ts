@@ -24,6 +24,7 @@ router.get(
         id: userId,
       },
       select: {
+        id: true,
         username: true,
         email: true,
         avatarUrl: true,

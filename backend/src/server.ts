@@ -7,6 +7,7 @@ import authRoutes from "./routes/auth.routes.js";
 import roomRoutes from "./routes/room.routes.js";
 import userRoutes from "./routes/user.routes.js";
 import swaggerUi from "swagger-ui-express";
+import expenseRoutes from "./routes/expense.routes.js";
 
 //@ts-ignore
 import swaggerDocument from "./config/swagger-output.json";
@@ -23,6 +24,7 @@ app.use("/auth", authRoutes);
 
 app.use("/room", roomRoutes);
 app.use("/user", userRoutes);
+app.use("/expense", expenseRoutes);
 
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "healthy", timestamp: new Date() });

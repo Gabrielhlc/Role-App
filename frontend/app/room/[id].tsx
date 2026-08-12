@@ -177,6 +177,19 @@ export default function RoomDetailsScreen() {
             )}
           />
         </View>
+
+        <TouchableOpacity
+          style={styles.splitButton}
+          onPress={() =>
+            router.push({
+              pathname: "/expense",
+              params: { roomId: id, roomName: name },
+            })
+          }
+          activeOpacity={0.8}
+        >
+          <Text style={styles.addMemberButtonText}>Divisão de Conta</Text>
+        </TouchableOpacity>
       </View>
 
       <Modal
@@ -287,6 +300,16 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
+    marginTop: 12,
+    marginBottom: 24,
+  },
+  splitButton: {
+    backgroundColor: "#008643",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
     marginBottom: 24,
   },
   addMemberButtonText: {

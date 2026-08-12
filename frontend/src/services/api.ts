@@ -28,3 +28,22 @@ api.interceptors.request.use(
     return Promise.reject(error);
   },
 );
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response) {
+      const serverMessage =
+        error.response.data?.error ||
+        error.response.data?.message ||
+        `Erro ${error.response.status}: Não foi possível processar a requisição.`;
+
+      error.message = serverMessage;
+    } else if (error.request) {
+      error.message =
+        "Servidor indisponível. Verifique sua conexão com a internet.";
+    }
+
+    return Promise.reject(error);
+  },
+);

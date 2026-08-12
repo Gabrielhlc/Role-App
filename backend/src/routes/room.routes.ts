@@ -136,6 +136,57 @@ router.get(
   },
 );
 
+router.get(
+  "/:id/participants",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+
+    if (typeof id !== "string") {
+      return res.status(400).json({ error: "ID de sala inválido." });
+    }
+
+    try {
+      const room = await prisma.room.findUnique({
+        where: { id },
+        select: { hostId: true },
+      });
+
+      if (!room) {
+        return res.status(404).json({ error: "Sala não encontrada." });
+      }
+
+      const roomParticipants = await prisma.roomParticipant.findMany({
+        where: { roomId: id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+            },
+          },
+        },
+        orderBy: { joinedAt: "asc" },
+      });
+
+      const participants = roomParticipants.map((p) => ({
+        id: p.user.id,
+        username: p.user.username,
+        avatarUrl: p.user.avatarUrl,
+        isHost: p.user.id === room.hostId,
+      }));
+
+      return res.status(200).json(participants);
+    } catch (error) {
+      console.error("Erro ao buscar participantes:", error);
+      return res
+        .status(500)
+        .json({ error: "Erro interno ao buscar participantes." });
+    }
+  },
+);
+
 // router.get(
 //   "/:id/participants",
 //   requireAuth,
@@ -213,7 +264,6 @@ router.post(
     }
 
     try {
-      // 1. Verifica se a sala realmente existe
       const room = await prisma.room.findUnique({
         where: { id },
       });
@@ -239,7 +289,7 @@ router.post(
         });
       }
 
-      // 4. Retorna os dados atualizados da sala com a lista de participantes e informações do Host
+      // Retorna os dados atualizados da sala com a lista de participantes e informações do Host
       const roomDetails = await prisma.room.findUnique({
         where: { id },
         include: {

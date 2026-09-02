@@ -190,6 +190,19 @@ export default function RoomDetailsScreen() {
         >
           <Text style={styles.addMemberButtonText}>Divisão de Conta</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.splitButton}
+          onPress={() =>
+            router.push({
+              pathname: "/map/[roomId]",
+              params: { roomId: id, roomName: name },
+            })
+          }
+          activeOpacity={0.8}
+        >
+          <Text style={styles.addMemberButtonText}>Geolocalização</Text>
+        </TouchableOpacity>
       </View>
 
       <Modal

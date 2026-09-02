@@ -35,6 +35,8 @@
 
     // Recommended Options
     "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "verbatimModuleSyntax": true,
     "isolatedModules": true,

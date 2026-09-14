@@ -38,9 +38,7 @@ const io = new Server(server, {
   },
 });
 
-io.on("connection", (socket) => {
-  console.log("🔥 [TESTE DIRETO NO SERVER.TS] Socket conectado:", socket.id);
-});
+io.on("connection", (socket) => {});
 
 setupLocationSocket(io);
 

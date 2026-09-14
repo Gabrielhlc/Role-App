@@ -6,7 +6,6 @@ const socket = io("http://localhost:3000", {
 
 const ROOM_ID = "a7a6fcdf-76b2-497b-a3a9-b432a04cae19";
 
-// 🎲 Lista de nomes para sortear
 const NAMES = [
   "Lucas Silva",
   "Mariana Costa",
@@ -20,14 +19,12 @@ const NAMES = [
   "Pedro Henrique",
 ];
 
-// 🆔 Gera um ID único e escolhe um nome aleatório a cada novo terminal
 const randomName = NAMES[Math.floor(Math.random() * NAMES.length)];
 const uniqueId = Math.random().toString(36).substring(2, 7);
 const FRIEND_ID = `friend_${uniqueId}_${Date.now()}`;
 const USERNAME = `${randomName} (${uniqueId})`;
 const AVATAR_URL = `https://i.pravatar.cc/150?u=${FRIEND_ID}`;
 
-// 📍 Posição inicial com um leve espalhamento aleatório (~100m a 300m da base)
 let lat = -7.2206 + (Math.random() - 0.5) * 0.004;
 let lng = -35.8888 + (Math.random() - 0.5) * 0.004;
 
@@ -36,13 +33,11 @@ socket.on("connect", () => {
   console.log(`🆔 ID do Usuário: ${FRIEND_ID}`);
   console.log(`📍 Posição Inicial: ${lat.toFixed(5)}, ${lng.toFixed(5)}\n`);
 
-  // Entra na sala
   socket.emit("join_room_map", {
     roomId: ROOM_ID,
     userId: FRIEND_ID,
   });
 
-  // 👂 Escuta atualizações de outros usuários (inclusive o seu app)
   socket.on("user_location_updated", (user) => {
     if (user.userId !== FRIEND_ID) {
       console.log(
@@ -55,10 +50,9 @@ socket.on("connect", () => {
     console.log(`🛑 [SAÍDA] Usuário ${userId} parou de compartilhar.`);
   });
 
-  // Envia posição a cada 3 segundos com caminhada aleatória
   const interval = setInterval(() => {
-    lat += (Math.random() - 0.5) * 0.0006;
-    lng += (Math.random() - 0.5) * 0.0006;
+    lat += (Math.random() - 0.5) * 0.001;
+    lng += (Math.random() - 0.5) * 0.001;
 
     console.log(
       `🚶 ${USERNAME} andou para: ${lat.toFixed(5)}, ${lng.toFixed(5)}`,
@@ -74,7 +68,6 @@ socket.on("connect", () => {
     });
   }, 3000);
 
-  // 🧹 Limpeza ao pressionar Ctrl + C no terminal
   process.on("SIGINT", () => {
     console.log(`\n👋 Encerrando simulação de ${USERNAME}...`);
     clearInterval(interval);

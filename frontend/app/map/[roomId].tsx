@@ -12,6 +12,7 @@ import {
   UIManager,
   LayoutAnimation,
   Alert,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, Stack } from "expo-router";
@@ -47,6 +48,13 @@ interface User {
   id: string;
   username: string;
   avatarUrl: string;
+}
+
+interface Destination {
+  title: string;
+  latitude: number;
+  longitude: number;
+  setBy?: string;
 }
 
 // 📐 Fórmula de Haversine: Calcula a distância em linha reta em metros
@@ -103,6 +111,11 @@ export default function RoomMapScreen() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
   const [user, setUser] = useState<User>({} as User);
+
+  const [destination, setDestination] = useState<Destination | null>(null);
+  const [searchAddress, setSearchAddress] = useState("");
+  const [isSearchingAddress, setIsSearchingAddress] = useState(false);
+  const [showAddressInput, setShowAddressInput] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -176,6 +189,16 @@ export default function RoomMapScreen() {
       }));
     });
 
+    socket.on("room_destination_updated", (dest: Destination) => {
+      setDestination(dest);
+    });
+
+    socket.on("room_destination_cleared", () => {
+      setDestination(null);
+      setSearchAddress("");
+      setShowAddressInput(false);
+    });
+
     socket.on(
       "user_stopped_sharing",
       ({ userId: leftUserId }: { userId: string }) => {
@@ -197,6 +220,8 @@ export default function RoomMapScreen() {
       socket.off("room_locations_snapshot");
       socket.off("user_location_updated");
       socket.off("user_stopped_sharing");
+      socket.off("room_destination_updated");
+      socket.off("room_destination_cleared");
       socket.disconnect();
     };
   }, [roomId, currentUserId]);
@@ -292,6 +317,96 @@ export default function RoomMapScreen() {
         roomId,
         userId: currentUserId,
       });
+    }
+  };
+
+  const handleSetDestination = async () => {
+    if (!searchAddress.trim()) return;
+
+    try {
+      setIsSearchingAddress(true);
+
+      // Converte o endereço digitado em coordenadas geográficas
+      const results = await Location.geocodeAsync(searchAddress);
+
+      if (!results || results.length === 0) {
+        Alert.alert(
+          "Não encontrado",
+          "Não encontramos coordenadas para esse endereço.",
+        );
+        return;
+      }
+
+      const { latitude, longitude } = results[0];
+
+      const newDestination: Destination = {
+        title: searchAddress.trim(),
+        latitude,
+        longitude,
+        setBy: currentUsername,
+      };
+
+      setDestination(newDestination);
+
+      // Dispara para o backend repassar a todos
+      socket.emit("set_room_destination", {
+        roomId,
+        destination: newDestination,
+      });
+
+      setSearchAddress("");
+      setShowAddressInput(false);
+
+      // Move a câmera para o ponto recém-criado
+      mapRef.current?.animateToRegion(
+        {
+          latitude,
+          longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01 * ASPECT_RATIO,
+        },
+        800,
+      );
+    } catch (error) {
+      console.error("Erro ao buscar endereço:", error);
+      Alert.alert("Erro", "Falha ao processar o endereço digitado.");
+    } finally {
+      setIsSearchingAddress(false);
+    }
+  };
+
+  const handleClearDestination = () => {
+    Alert.alert(
+      "Remover Ponto de Encontro",
+      "Tem certeza de que deseja remover o destino do rolê para todos?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Remover",
+          style: "destructive",
+          onPress: () => {
+            setDestination(null);
+            setSearchAddress("");
+            setShowAddressInput(false);
+
+            socket.emit("clear_room_destination", { roomId });
+          },
+        },
+      ],
+    );
+  };
+
+  const handleFocusDestination = () => {
+    if (destination && mapRef.current) {
+      mapRef.current.animateToRegion(
+        {
+          latitude: destination.latitude,
+          longitude: destination.longitude,
+          latitudeDelta: 0.008,
+          longitudeDelta: 0.008 * ASPECT_RATIO,
+        },
+        500,
+      );
     }
   };
 
@@ -391,38 +506,74 @@ export default function RoomMapScreen() {
                   />
                 </View>
 
-                {/* Etiqueta Você */}
                 <View style={styles.userLabelContainer}>
                   <Text style={styles.userLabelText}>Você</Text>
                 </View>
               </View>
             </Marker>
 
-            {/* Marcadores Animados dos Amigos */}
             {friendsListWithDistance.map((friend) => (
               <FriendMarker key={friend.userId} friend={friend} />
             ))}
+
+            {destination && (
+              <Marker
+                key={`dest-${destination.latitude}-${destination.longitude}`}
+                coordinate={{
+                  latitude: destination.latitude,
+                  longitude: destination.longitude,
+                }}
+                title="Ponto de Encontro"
+                description={destination.title}
+                anchor={{ x: 0.5, y: 1 }}
+              >
+                <View style={styles.destinationPinContainer}>
+                  <View style={styles.destinationIconCircle}>
+                    <Text style={styles.destinationEmoji}>🏁</Text>
+                  </View>
+                  <View style={styles.destinationLabel}>
+                    <Text style={styles.destinationTitleText} numberOfLines={1}>
+                      {destination.title}
+                    </Text>
+                  </View>
+                  <View style={styles.destinationArrow} />
+                </View>
+              </Marker>
+            )}
           </MapView>
         )}
 
-        <TouchableOpacity
-          style={styles.recenterButton}
-          activeOpacity={0.8}
-          onPress={() => {
-            if (currentCoords && mapRef.current) {
-              mapRef.current.animateToRegion(
-                {
-                  ...currentCoords,
-                  latitudeDelta: LATITUDE_DELTA,
-                  longitudeDelta: LONGITUDE_DELTA,
-                },
-                500,
-              );
-            }
-          }}
-        >
-          <Text style={styles.recenterIcon}>🎯</Text>
-        </TouchableOpacity>
+        {/* 🎯 Grupo de Ações Rápidas (Destino + Usuário) */}
+        <View style={styles.mapActionsGroup}>
+          {destination && (
+            <TouchableOpacity
+              style={styles.destinationFocusButton}
+              activeOpacity={0.8}
+              onPress={handleFocusDestination}
+            >
+              <Text style={styles.actionButtonEmoji}>🏁</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={styles.recenterButton}
+            activeOpacity={0.8}
+            onPress={() => {
+              if (currentCoords && mapRef.current) {
+                mapRef.current.animateToRegion(
+                  {
+                    ...currentCoords,
+                    latitudeDelta: LATITUDE_DELTA,
+                    longitudeDelta: LONGITUDE_DELTA,
+                  },
+                  500,
+                );
+              }
+            }}
+          >
+            <Text style={styles.actionButtonEmoji}>🎯</Text>
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity
           style={styles.expandToggleButton}
@@ -478,6 +629,76 @@ export default function RoomMapScreen() {
               </Text>
             </View>
           </View>
+
+          {destination ? (
+            <View style={styles.destinationCard}>
+              <View style={styles.destinationCardLeft}>
+                <Text style={styles.destinationCardBadge}>🏁 DESTINO</Text>
+                <Text style={styles.destinationCardTitle} numberOfLines={1}>
+                  {destination.title}
+                </Text>
+                <Text style={styles.destinationSetBy}>
+                  Definido por {destination.setBy}
+                </Text>
+                {currentCoords && (
+                  <Text style={styles.destinationCardDist}>
+                    Você está a{" "}
+                    {formatDistance(
+                      calculateDistanceInMeters(
+                        currentCoords.latitude,
+                        currentCoords.longitude,
+                        destination.latitude,
+                        destination.longitude,
+                      ),
+                    )}
+                  </Text>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={styles.clearDestButton}
+                onPress={handleClearDestination}
+              >
+                <Text style={styles.clearDestIcon}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.setDestWrapper}>
+              {showAddressInput ? (
+                <View style={styles.inputRow}>
+                  <TextInput
+                    style={styles.addressInput}
+                    placeholder="Digite o endereço ou nome do local..."
+                    placeholderTextColor="#94A3B8"
+                    value={searchAddress}
+                    onChangeText={setSearchAddress}
+                    onSubmitEditing={handleSetDestination}
+                    returnKeyType="search"
+                  />
+                  <TouchableOpacity
+                    style={styles.confirmSearchButton}
+                    onPress={handleSetDestination}
+                    disabled={isSearchingAddress}
+                  >
+                    {isSearchingAddress ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <Text style={styles.confirmSearchText}>Fixar</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.openInputButton}
+                  onPress={() => setShowAddressInput(true)}
+                >
+                  <Text style={styles.openInputText}>
+                    + Definir Ponto de Encontro
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
           <ScrollView
             style={styles.friendsList}
@@ -579,10 +800,31 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
 
-  recenterButton: {
+  mapActionsGroup: {
     position: "absolute",
     bottom: 20,
     right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    zIndex: 10,
+  },
+  destinationFocusButton: {
+    backgroundColor: "#FEF2F2",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: "#FECACA",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  recenterButton: {
     backgroundColor: "#FFF",
     width: 44,
     height: 44,
@@ -595,7 +837,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
   },
-  recenterIcon: { fontSize: 20 },
+  actionButtonEmoji: {
+    fontSize: 20,
+  },
 
   expandToggleButton: {
     position: "absolute",
@@ -761,5 +1005,160 @@ const styles = StyleSheet.create({
     color: "#FFF",
     fontWeight: "bold",
     fontSize: 16,
+  },
+
+  destinationPinContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 140,
+  },
+  destinationIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#DC2626",
+    borderWidth: 2.5,
+    borderColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  destinationEmoji: {
+    fontSize: 18,
+  },
+  destinationLabel: {
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginTop: 2,
+    maxWidth: 130,
+  },
+  destinationTitleText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+  destinationArrow: {
+    width: 0,
+    height: 0,
+    backgroundColor: "transparent",
+    borderStyle: "solid",
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 8,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderTopColor: "rgba(15, 23, 42, 0.9)",
+    marginTop: -1,
+  },
+
+  destinationCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  destinationCardLeft: {
+    flex: 1,
+    marginRight: 8,
+  },
+  destinationCardBadge: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#DC2626",
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  destinationCardTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1E293B",
+  },
+  destinationSetBy: {
+    fontSize: 11,
+    color: "#888",
+    fontWeight: "500",
+    marginTop: 2,
+  },
+  destinationCardDist: {
+    fontSize: 12,
+    color: "#B91C1C",
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  clearDestButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#FEE2E2",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  clearDestIcon: {
+    color: "#DC2626",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+
+  // ==========================================
+  // 🔍 INPUT DE BUSCA DE ENDEREÇO
+  // ==========================================
+  setDestWrapper: {
+    marginBottom: 12,
+  },
+  openInputButton: {
+    borderWidth: 1.5,
+    borderColor: "#CBD5E1",
+    borderStyle: "dashed",
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F8FAFC",
+  },
+  openInputText: {
+    color: "#64748B",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  addressInput: {
+    flex: 1,
+    height: 44,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    paddingHorizontal: 12,
+    fontSize: 13,
+    color: "#0F172A",
+  },
+  confirmSearchButton: {
+    height: 44,
+    backgroundColor: "#0F172A",
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  confirmSearchText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "bold",
   },
 });

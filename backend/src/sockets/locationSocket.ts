@@ -3,6 +3,7 @@ import {
   LocationService,
   type UserLocationPayload,
 } from "../services/locationService.ts";
+import { redis } from "../libs/redis.ts";
 
 export function setupLocationSocket(io: Server) {
   io.on("connection", (socket: Socket) => {
@@ -15,11 +16,16 @@ export function setupLocationSocket(io: Server) {
         socket.join(`room_${roomId}`);
         (socket as any).currentRoomId = roomId;
         (socket as any).currentUserId = userId;
-        console.log(`👤 Usuário [${userId}] entrou na sala [${roomId}]`);
+        console.log(`Usuário [${userId}] entrou na sala [${roomId}]`);
 
         // Envia o snapshot imediato de quem já está compartilhando
         const activeLocations = await LocationService.getRoomLocations(roomId);
         socket.emit("room_locations_snapshot", activeLocations);
+
+        const savedDestination = await redis.get(`room:${roomId}:destination`);
+        if (savedDestination) {
+          socket.emit("room_destination_updated", JSON.parse(savedDestination));
+        }
       },
     );
 
@@ -35,7 +41,7 @@ export function setupLocationSocket(io: Server) {
         longitude: number;
       }) => {
         console.log(
-          `📍 Posição recebida de [${data.username}] para sala [${data.roomId}]`,
+          `Posição recebida de [${data.username}] para sala [${data.roomId}]`,
         );
         const payload: UserLocationPayload = {
           userId: data.userId,
@@ -73,6 +79,37 @@ export function setupLocationSocket(io: Server) {
         socket.to(`room_${roomId}`).emit("user_stopped_sharing", { userId });
       }
       console.log(`[Socket] Cliente desconectado: ${socket.id}`);
+    });
+
+    socket.on("clear_room_destination", async ({ roomId }) => {
+      try {
+        // 1. Remove a chave do Redis
+        await redis.del(`room:${roomId}:destination`);
+
+        // 2. Avisa TODOS os membros da sala para sumirem com o marcador
+        io.to(roomId).emit("room_destination_cleared");
+
+        console.log(`[DESTINO] Destino da sala ${roomId} foi removido.`);
+      } catch (error) {
+        console.error("Erro ao limpar destino da sala:", error);
+      }
+    });
+
+    socket.on("set_room_destination", async ({ roomId, destination }) => {
+      /*
+    destination: {
+      title: string;
+      latitude: number;
+      longitude: number;
+      setBy: string;       
+    }
+  */
+      await redis.set(
+        `room:${roomId}:destination`,
+        JSON.stringify(destination),
+      );
+
+      io.to(roomId).emit("room_destination_updated", destination);
     });
   });
 }

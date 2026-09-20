@@ -203,6 +203,17 @@ export default function RoomDetailsScreen() {
         >
           <Text style={styles.addMemberButtonText}>Geolocalização</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.splitButton}
+          onPress={() =>
+            router.push({
+              pathname: `/gallery/${id}`,
+              params: { roomName: name },
+            })
+          }
+        >
+          <Text style={styles.addMemberButtonText}>Galeria do Rolê</Text>
+        </TouchableOpacity>
       </View>
 
       <Modal
@@ -323,7 +334,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 12,
-    marginBottom: 24,
+    marginBottom: 12,
   },
   addMemberButtonText: {
     color: "#FFF",

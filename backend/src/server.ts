@@ -7,6 +7,7 @@ import process from "node:process";
 import authRoutes from "./routes/auth.routes.js";
 import roomRoutes from "./routes/room.routes.js";
 import userRoutes from "./routes/user.routes.js";
+import mediaRoutes from "./routes/media.routes.ts";
 import swaggerUi from "swagger-ui-express";
 import expenseRoutes from "./routes/expense.routes.js";
 import { Server } from "socket.io";
@@ -28,17 +29,23 @@ app.use("/auth", authRoutes);
 app.use("/room", roomRoutes);
 app.use("/user", userRoutes);
 app.use("/expense", expenseRoutes);
+app.use("/media", mediaRoutes);
 
 const server = http.createServer(app);
 
-const io = new Server(server, {
+export const io = new Server(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST"],
   },
 });
 
-io.on("connection", (socket) => {});
+io.on("connection", (socket) => {
+  socket.on("join_room", ({ roomId }) => {
+    socket.join(roomId);
+    console.log(`Socket ${socket.id} entrou no canal da sala ${roomId}`);
+  });
+});
 
 setupLocationSocket(io);
 

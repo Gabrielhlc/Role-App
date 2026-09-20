@@ -11,19 +11,19 @@ generator client {
 // ==========================================
 
 model User {
-  id            String   @id @default(uuid()) @db.Uuid
-  username      String   @db.VarChar(255)
-  email         String   @unique @db.VarChar(255)
-  avatarUrl     String?  @map("avatar_url") @db.Text
-  oauthId       String   @unique @map("oauth_id") @db.Text
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp
+  id        String   @id @default(uuid()) @db.Uuid
+  username  String   @db.VarChar(255)
+  email     String   @unique @db.VarChar(255)
+  avatarUrl String?  @map("avatar_url") @db.Text
+  oauthId   String   @unique @map("oauth_id") @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp
 
   // Relações reversas
-  hostedRooms       Room[]             @relation("HostedRooms")
+  hostedRooms        Room[]            @relation("HostedRooms")
   roomParticipations RoomParticipant[]
-  paidExpenses      Expense[]          @relation("PaidExpenses")
-  expenseSplits     ExpenseSplit[]
-  media             Media[]
+  paidExpenses       Expense[]         @relation("PaidExpenses")
+  expenseSplits      ExpenseSplit[]
+  media              RoomMedia[]
 
   @@map("users")
 }
@@ -45,7 +45,7 @@ model Room {
   host         User              @relation("HostedRooms", fields: [hostId], references: [id])
   participants RoomParticipant[]
   expenses     Expense[]
-  media        Media[]
+  media        RoomMedia[]
 
   @@map("rooms")
 }
@@ -102,17 +102,29 @@ model ExpenseSplit {
 // 4. GALERIA DE MÍDIA COMPARTILHADA
 // ==========================================
 
-model Media {
-  id        String   @id @default(uuid()) @db.Uuid
-  roomId    String   @map("room_id") @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  s3Key     String   @map("s3_key") @db.Text
-  mediaType String   @map("media_type") @db.VarChar(20)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+model RoomMedia {
+  id        String    @id @default(uuid()) @db.Uuid
+  roomId    String    @map("room_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  type      MediaType
+  s3Key     String    @unique @map("s3_key") @db.VarChar(500)
+  mimeType  String    @map("mime_type") @db.VarChar(100)
+  fileSize  Int?      @map("file_size")
+  width     Int?
+  height    Int?
+  duration  Int?      
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp
 
   // Relações
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("media")
+  // Índice composto essencial para ordenar a galeria por data rapidamente
+  @@index([roomId, createdAt(sort: Desc)])
+  @@map("room_media")
 }

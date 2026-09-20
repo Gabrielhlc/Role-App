@@ -1,3 +1,6 @@
+-- CreateEnum
+CREATE TYPE "MediaType" AS ENUM ('IMAGE', 'VIDEO');
+
 -- CreateTable
 CREATE TABLE "users" (
     "id" UUID NOT NULL,
@@ -57,15 +60,20 @@ CREATE TABLE "expense_splits" (
 );
 
 -- CreateTable
-CREATE TABLE "media" (
+CREATE TABLE "room_media" (
     "id" UUID NOT NULL,
     "room_id" UUID NOT NULL,
     "user_id" UUID NOT NULL,
-    "s3_key" TEXT NOT NULL,
-    "media_type" VARCHAR(20) NOT NULL,
+    "type" "MediaType" NOT NULL,
+    "s3_key" VARCHAR(500) NOT NULL,
+    "mime_type" VARCHAR(100) NOT NULL,
+    "file_size" INTEGER,
+    "width" INTEGER,
+    "height" INTEGER,
+    "duration" INTEGER,
     "created_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "media_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "room_media_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -76,6 +84,12 @@ CREATE UNIQUE INDEX "users_oauth_id_key" ON "users"("oauth_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "rooms_code_key" ON "rooms"("code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "room_media_s3_key_key" ON "room_media"("s3_key");
+
+-- CreateIndex
+CREATE INDEX "room_media_room_id_created_at_idx" ON "room_media"("room_id", "created_at" DESC);
 
 -- AddForeignKey
 ALTER TABLE "rooms" ADD CONSTRAINT "rooms_host_id_fkey" FOREIGN KEY ("host_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -99,7 +113,7 @@ ALTER TABLE "expense_splits" ADD CONSTRAINT "expense_splits_expense_id_fkey" FOR
 ALTER TABLE "expense_splits" ADD CONSTRAINT "expense_splits_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "media" ADD CONSTRAINT "media_room_id_fkey" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "room_media" ADD CONSTRAINT "room_media_room_id_fkey" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "media" ADD CONSTRAINT "media_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "room_media" ADD CONSTRAINT "room_media_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

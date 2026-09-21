@@ -4,7 +4,7 @@ const socket = io("http://localhost:3000", {
   transports: ["websocket"],
 });
 
-const ROOM_ID = "a7a6fcdf-76b2-497b-a3a9-b432a04cae19";
+const ROOM_ID = "896dd9b2-cb95-481a-9418-d3e27e0d7f78";
 
 const NAMES = [
   "Lucas Silva",

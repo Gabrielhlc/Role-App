@@ -4,6 +4,7 @@ import {
   requireAuth,
   type AuthenticatedRequest,
 } from "../middlewares/auth.middleware.js";
+import { LocationService } from "../services/locationService.js";
 
 const router = Router();
 
@@ -318,6 +319,54 @@ router.post(
         .status(500)
         .json({ error: "Erro interno ao registrar entrada na sala." });
     }
+  },
+);
+
+router.post(
+  "/:id/location",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { id: roomId } = req.params;
+    const { latitude, longitude, username, avatarUrl } = req.body;
+    const userId = req.user?.userId;
+
+    if (!userId || !latitude || !longitude) {
+      return res
+        .status(400)
+        .json({ error: "Dados de localização incompletos." });
+    }
+
+    if (typeof roomId !== "string") {
+      return res.status(400).json({ error: "Dados de localização inválidos." });
+    }
+
+    console.log(
+      `📡 [HTTP BG] Posição recebida de [${username || "Você"}] na sala [${roomId}]: ${latitude}, ${longitude}`,
+    );
+
+    const payload = {
+      userId,
+      username: username || "Participante",
+      avatarUrl,
+      latitude,
+      longitude,
+      updatedAt: Date.now(),
+    };
+
+    await LocationService.updateLocation(roomId, payload);
+
+    // 2. Dispara no canal do Socket para os outros amigos na sala verem
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`room_${roomId}`).emit("user_location_updated", payload);
+      console.log(
+        `📢 [SOCKET EMIT] Posição repassada para o canal: room_${roomId}`,
+      );
+    } else {
+      console.error("❌ ERRO: Instância do io não encontrada no Express.");
+    }
+
+    return res.status(200).json({ success: true });
   },
 );
 

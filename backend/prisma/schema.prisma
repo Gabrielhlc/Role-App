@@ -6,9 +6,6 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// ==========================================
-// 1. NÚCLEO DE USUÁRIOS E AUTENTICAÇÃO
-// ==========================================
 
 model User {
   id        String   @id @default(uuid()) @db.Uuid
@@ -18,7 +15,6 @@ model User {
   oauthId   String   @unique @map("oauth_id") @db.Text
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamp
 
-  // Relações reversas
   hostedRooms        Room[]            @relation("HostedRooms")
   roomParticipations RoomParticipant[]
   paidExpenses       Expense[]         @relation("PaidExpenses")
@@ -28,9 +24,6 @@ model User {
   @@map("users")
 }
 
-// ==========================================
-// 2. GERENCIAMENTO DE SALAS (OS ROLÊS)
-// ==========================================
 
 model Room {
   id        String    @id @default(uuid()) @db.Uuid
@@ -41,7 +34,6 @@ model Room {
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp
   closedAt  DateTime? @map("closed_at") @db.Timestamp
 
-  // Relações
   host         User              @relation("HostedRooms", fields: [hostId], references: [id])
   participants RoomParticipant[]
   expenses     Expense[]
@@ -56,7 +48,6 @@ model RoomParticipant {
   shareLocation Boolean  @default(false) @map("share_location")
   joinedAt      DateTime @default(now()) @map("joined_at") @db.Timestamp
 
-  // Relações
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -64,9 +55,6 @@ model RoomParticipant {
   @@map("room_participants")
 }
 
-// ==========================================
-// 3. MÓDULO FINANCEIRO (COMPARTILHAMENTO DE CONTA)
-// ==========================================
 
 model Expense {
   id          String   @id @default(uuid()) @db.Uuid
@@ -76,7 +64,6 @@ model Expense {
   totalAmount Decimal  @map("total_amount") @db.Decimal(10, 2)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp
 
-  // Relações
   room   Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
   payer  User           @relation("PaidExpenses", fields: [paidBy], references: [id])
   splits ExpenseSplit[]
@@ -98,9 +85,6 @@ model ExpenseSplit {
   @@map("expense_splits")
 }
 
-// ==========================================
-// 4. GALERIA DE MÍDIA COMPARTILHADA
-// ==========================================
 
 enum MediaType {
   IMAGE
@@ -120,7 +104,6 @@ model RoomMedia {
   duration  Int?      
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp
 
-  // Relações
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

@@ -40,6 +40,8 @@ export const io = new Server(server, {
   },
 });
 
+app.set("io", io);
+
 io.on("connection", (socket) => {
   socket.on("join_room", ({ roomId }) => {
     socket.join(roomId);

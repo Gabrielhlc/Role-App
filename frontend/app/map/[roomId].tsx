@@ -13,6 +13,7 @@ import {
   LayoutAnimation,
   Alert,
   TextInput,
+  PermissionsAndroid,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, Stack } from "expo-router";
@@ -21,6 +22,11 @@ import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import { socket } from "../../src/services/socket";
 import { FriendMarker } from "../../src/components/FriendMarker";
 import { api } from "../../src/services/api";
+import "../../src/services/backgroundLocation";
+import {
+  startBackgroundTracking,
+  stopBackgroundTracking,
+} from "../../src/services/backgroundLocation";
 
 // Habilita animações de layout nativas no Android
 if (
@@ -57,7 +63,7 @@ interface Destination {
   setBy?: string;
 }
 
-// 📐 Fórmula de Haversine: Calcula a distância em linha reta em metros
+// Fórmula de Haversine: Calcula a distância em linha reta em metros
 function calculateDistanceInMeters(
   lat1: number,
   lon1: number,
@@ -252,7 +258,7 @@ export default function RoomMapScreen() {
 
         locationSubscription = await Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.High,
+            accuracy: Location.Accuracy.Highest,
             timeInterval: 2000,
             distanceInterval: 1,
           },
@@ -297,22 +303,63 @@ export default function RoomMapScreen() {
     };
   }, [roomId, currentUserId, currentUsername, user.avatarUrl]);
 
-  const handleToggleSharing = () => {
+  const handleToggleSharing = async () => {
     if (!isSharing) {
-      setIsSharing(true);
-      if (currentCoords) {
-        lastLocationSentRef.current = Date.now();
-        socket.emit("send_location", {
-          roomId,
-          userId: currentUserId,
+      try {
+        // Tenta solicitar notificação de forma não impeditiva no Android 13+
+        if (Platform.OS === "android" && Platform.Version >= 33) {
+          try {
+            await PermissionsAndroid.request(
+              PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+            );
+          } catch (e) {
+            console.warn("Permissão de notificação ignorada:", e);
+          }
+        }
+
+        // Solicita permissão de segundo plano
+        const { status } = await Location.requestBackgroundPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert(
+            "Permissão de segundo plano",
+            "Para que seus amigos continuem te vendo ao minimizar o app, marque a opção 'Permitir o tempo todo' nas configurações.",
+          );
+          return;
+        }
+
+        await startBackgroundTracking(roomId, {
           username: currentUsername,
           avatarUrl: user.avatarUrl,
-          latitude: currentCoords.latitude,
-          longitude: currentCoords.longitude,
         });
+
+        setIsSharing(true);
+
+        if (currentCoords) {
+          socket.emit("send_location", {
+            roomId,
+            userId: currentUserId,
+            username: currentUsername,
+            avatarUrl: user.avatarUrl,
+            latitude: currentCoords.latitude,
+            longitude: currentCoords.longitude,
+          });
+        }
+      } catch (error) {
+        console.error("Erro fatal ao iniciar segundo plano:", error);
+        Alert.alert(
+          "Erro",
+          "Não foi possível iniciar o rastreamento em segundo plano.",
+        );
       }
     } else {
       setIsSharing(false);
+
+      try {
+        await stopBackgroundTracking();
+      } catch (err) {
+        console.warn("Erro ao parar background tracking:", err);
+      }
+
       socket.emit("stop_sharing_location", {
         roomId,
         userId: currentUserId,
@@ -1110,10 +1157,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "bold",
   },
-
-  // ==========================================
-  // 🔍 INPUT DE BUSCA DE ENDEREÇO
-  // ==========================================
   setDestWrapper: {
     marginBottom: 12,
   },

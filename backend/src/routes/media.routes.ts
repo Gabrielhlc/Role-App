@@ -6,6 +6,8 @@ import {
 } from "../services/s3.ts";
 import { io } from "../server.ts";
 import type { AuthenticatedRequest } from "../middlewares/auth.middleware.ts";
+import { logger } from "../libs/logger.ts";
+import { redis } from "../libs/redis.ts";
 
 export const mediaRoutes = Router();
 
@@ -15,7 +17,7 @@ mediaRoutes.post(
   async (req: AuthenticatedRequest, res) => {
     const { roomId } = req.params;
     const { mimeType, extension, fileSize } = req.body;
-    const userId = req.user?.userId || req.body.userId; // use seu middleware de auth
+    const userId = req.user?.userId || req.body.userId;
 
     if (typeof roomId !== "string") {
       return res.status(400).json({ error: "roomId inválido." });
@@ -27,7 +29,7 @@ mediaRoutes.post(
         .json({ error: "mimeType e extension são obrigatórios." });
     }
 
-    // Validação de segurança de tamanho (ex: 20MB imagens, 100MB vídeos)
+    // Validação de segurança de tamanho (20MB imagens, 100MB vídeos)
     const isVideo = mimeType.startsWith("video/");
     const maxBytes = isVideo ? 100 * 1024 * 1024 : 20 * 1024 * 1024;
     if (fileSize && fileSize > maxBytes) {
@@ -42,6 +44,16 @@ mediaRoutes.post(
         userId,
         mimeType,
         extension,
+      });
+
+      await redis.set(`upload_timer:${s3Key}`, Date.now(), "EX", 600);
+
+      logger.info({
+        event: "MEDIA_UPLOAD_REQUESTED",
+        roomId,
+        userId,
+        s3Key,
+        mimeType,
       });
 
       return res.json({
@@ -64,6 +76,9 @@ mediaRoutes.post(
     const { roomId } = req.params;
     const { s3Key, mimeType, fileSize, width, height } = req.body;
     const userId = req.user?.userId || req.body.userId;
+
+    const startTime = await redis.get(`upload_timer:${s3Key}`);
+    const durationMs = startTime ? Date.now() - Number(startTime) : null;
 
     if (typeof roomId !== "string") {
       return res.status(400).json({ error: "roomId inválido." });
@@ -96,12 +111,28 @@ mediaRoutes.post(
         },
       });
 
-      // Gera a URL assinada para visualização imediata
+      logger.info({
+        event: "MEDIA_UPLOAD_CONFIRMED",
+        roomId,
+        userId,
+        s3Key,
+        mimeType,
+        fileSizeBytes: fileSize || null,
+        uploadDurationMs: durationMs,
+      });
+
       const viewUrl = await generatePresignedViewUrl(media.s3Key);
       const mediaPayload = { ...media, viewUrl };
 
-      // 📡 Notifica em tempo real a sala inteira para adicionar a foto na galeria
       io.to(roomId).emit("new_media_uploaded", mediaPayload);
+
+      logger.info({
+        event: "MEDIA_UPLOAD_CONFIRMED",
+        roomId,
+        userId,
+        fileSize,
+        mimeType,
+      });
 
       return res.status(201).json(mediaPayload);
     } catch (error) {

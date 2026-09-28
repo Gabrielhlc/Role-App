@@ -4,19 +4,31 @@ import {
   type UserLocationPayload,
 } from "../services/locationService.ts";
 import { redis } from "../libs/redis.ts";
+import { logger } from "../libs/logger.ts";
 
 export function setupLocationSocket(io: Server) {
   io.on("connection", (socket: Socket) => {
-    console.log(`[Socket] Novo cliente conectado: ${socket.id}`);
+    const connectedAt = Date.now();
 
-    // 1. Entrar na sala do Rolê
+    logger.info({
+      event: "SOCKET_CONNECTED",
+      socketId: socket.id,
+      transport: socket.conn.transport.name,
+    });
+
     socket.on(
       "join_room_map",
       async ({ roomId, userId }: { roomId: string; userId: string }) => {
         socket.join(`room_${roomId}`);
         (socket as any).currentRoomId = roomId;
         (socket as any).currentUserId = userId;
-        console.log(`Usuário [${userId}] entrou na sala [${roomId}]`);
+
+        logger.info({
+          event: "ROOM_MAP_JOINED",
+          socketId: socket.id,
+          roomId,
+          userId,
+        });
 
         // Envia o snapshot imediato de quem já está compartilhando
         const activeLocations = await LocationService.getRoomLocations(roomId);
@@ -29,7 +41,6 @@ export function setupLocationSocket(io: Server) {
       },
     );
 
-    // 2. Receber e repassar coordenada em tempo real (5s throttle no front)
     socket.on(
       "send_location",
       async (data: {
@@ -40,9 +51,6 @@ export function setupLocationSocket(io: Server) {
         latitude: number;
         longitude: number;
       }) => {
-        console.log(
-          `Posição recebida de [${data.username}] para sala [${data.roomId}]`,
-        );
         const payload: UserLocationPayload = {
           userId: data.userId,
           username: data.username,
@@ -52,10 +60,17 @@ export function setupLocationSocket(io: Server) {
           updatedAt: Date.now(),
         };
 
-        // Salva no Redis
         await LocationService.updateLocation(data.roomId, payload);
 
-        // Repassa para todos os outros participantes da sala
+        logger.info({
+          event: "LOCATION_PING",
+          source: "SOCKET_FOREGROUND",
+          roomId: data.roomId,
+          userId: data.userId,
+          latitude: data.latitude,
+          longitude: data.longitude,
+        });
+
         socket.to(`room_${data.roomId}`).emit("user_location_updated", payload);
       },
     );
@@ -65,28 +80,44 @@ export function setupLocationSocket(io: Server) {
       "stop_sharing_location",
       async ({ roomId, userId }: { roomId: string; userId: string }) => {
         await LocationService.removeUserLocation(roomId, userId);
+
+        logger.info({
+          event: "LOCATION_SHARING_STOPPED",
+          roomId,
+          userId,
+        });
+
         socket.to(`room_${roomId}`).emit("user_stopped_sharing", { userId });
       },
     );
 
     // 4. Desconexão inesperada (fechou o app / perdeu rede)
-    socket.on("disconnect", async () => {
+    socket.on("disconnect", async (reason) => {
       const roomId = (socket as any).currentRoomId;
       const userId = (socket as any).currentUserId;
+      const sessionDurationSeconds = (
+        (Date.now() - connectedAt) /
+        1000
+      ).toFixed(1);
 
       if (roomId && userId) {
         await LocationService.removeUserLocation(roomId, userId);
         socket.to(`room_${roomId}`).emit("user_stopped_sharing", { userId });
       }
-      console.log(`[Socket] Cliente desconectado: ${socket.id}`);
+      logger.warn({
+        event: "SOCKET_DISCONNECTED",
+        socketId: socket.id,
+        userId: userId || null,
+        roomId: roomId || null,
+        reason,
+        sessionDurationSeconds: Number(sessionDurationSeconds),
+      });
     });
 
     socket.on("clear_room_destination", async ({ roomId }) => {
       try {
-        // 1. Remove a chave do Redis
         await redis.del(`room:${roomId}:destination`);
 
-        // 2. Avisa TODOS os membros da sala para sumirem com o marcador
         io.to(roomId).emit("room_destination_cleared");
 
         console.log(`[DESTINO] Destino da sala ${roomId} foi removido.`);
@@ -96,14 +127,6 @@ export function setupLocationSocket(io: Server) {
     });
 
     socket.on("set_room_destination", async ({ roomId, destination }) => {
-      /*
-    destination: {
-      title: string;
-      latitude: number;
-      longitude: number;
-      setBy: string;       
-    }
-  */
       await redis.set(
         `room:${roomId}:destination`,
         JSON.stringify(destination),

@@ -12,6 +12,7 @@ import swaggerUi from "swagger-ui-express";
 import expenseRoutes from "./routes/expense.routes.js";
 import { Server } from "socket.io";
 import { setupLocationSocket } from "./sockets/locationSocket.ts";
+import { httpTelemetryMiddleware } from "./middlewares/telemetry.middleware.js";
 
 //@ts-ignore
 import swaggerDocument from "./config/swagger-output.json";
@@ -21,6 +22,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+app.use(httpTelemetryMiddleware);
 
 // Public
 app.use("/api", swaggerUi.serve, swaggerUi.setup(swaggerDocument));

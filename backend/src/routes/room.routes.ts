@@ -5,6 +5,7 @@ import {
   type AuthenticatedRequest,
 } from "../middlewares/auth.middleware.js";
 import { LocationService } from "../services/locationService.js";
+import { logger } from "../libs/logger.ts";
 
 const router = Router();
 
@@ -188,65 +189,6 @@ router.get(
   },
 );
 
-// router.get(
-//   "/:id/participants",
-//   requireAuth,
-//   async (req: AuthenticatedRequest, res: Response) => {
-//     const { id } = req.params;
-
-//     if (typeof id !== "string") {
-//       return res.status(400).json({ error: "ID de sala inválido." });
-//     }
-
-//     try {
-//       const room = await prisma.room.findUnique({
-//         where: { id },
-//         select: {
-//           id: true,
-//           hostId: true,
-//         },
-//       });
-
-//       if (!room) {
-//         return res.status(404).json({ error: "Sala não encontrada." });
-//       }
-
-//       const participants = await prisma.roomParticipant.findMany({
-//         where: { roomId: id },
-//         include: {
-//           user: {
-//             select: {
-//               id: true,
-//               username: true,
-//               email: true,
-//               avatarUrl: true,
-//             },
-//           },
-//         },
-//         orderBy: {
-//           joinedAt: "asc",
-//         },
-//       });
-
-//       const formattedParticipants = participants.map((p) => ({
-//         id: p.user.id,
-//         username: p.user.username,
-//         email: p.user.email,
-//         avatarUrl: p.user.avatarUrl,
-//         isHost: p.user.id === room.hostId,
-//         joinedAt: p.joinedAt,
-//       }));
-
-//       return res.status(200).json(formattedParticipants);
-//     } catch (error) {
-//       console.error("Erro ao buscar participantes da sala:", error);
-//       return res
-//         .status(500)
-//         .json({ error: "Erro interno ao buscar participantes." });
-//     }
-//   },
-// );
-
 router.post(
   "/:id/join",
   requireAuth,
@@ -340,10 +282,6 @@ router.post(
       return res.status(400).json({ error: "Dados de localização inválidos." });
     }
 
-    console.log(
-      `📡 [HTTP BG] Posição recebida de [${username || "Você"}] na sala [${roomId}]: ${latitude}, ${longitude}`,
-    );
-
     const payload = {
       userId,
       username: username || "Participante",
@@ -355,15 +293,23 @@ router.post(
 
     await LocationService.updateLocation(roomId, payload);
 
-    // 2. Dispara no canal do Socket para os outros amigos na sala verem
+    logger.info({
+      event: "LOCATION_PING",
+      source: "HTTP_BACKGROUND",
+      roomId,
+      userId,
+      latitude,
+      longitude,
+    });
+
     const io = req.app.get("io");
     if (io) {
       io.to(`room_${roomId}`).emit("user_location_updated", payload);
       console.log(
-        `📢 [SOCKET EMIT] Posição repassada para o canal: room_${roomId}`,
+        `[SOCKET EMIT] Posição repassada para o canal: room_${roomId}`,
       );
     } else {
-      console.error("❌ ERRO: Instância do io não encontrada no Express.");
+      console.error("ERRO: Instância do io não encontrada no Express.");
     }
 
     return res.status(200).json({ success: true });

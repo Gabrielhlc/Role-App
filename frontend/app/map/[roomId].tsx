@@ -258,7 +258,7 @@ export default function RoomMapScreen() {
 
         locationSubscription = await Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.Highest,
+            accuracy: Location.Accuracy.Balanced,
             timeInterval: 2000,
             distanceInterval: 1,
           },

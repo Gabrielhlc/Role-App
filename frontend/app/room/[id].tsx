@@ -8,18 +8,13 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
+  Share,
+  Image,
 } from "react-native";
-import * as Linking from "expo-linking";
 import * as Clipboard from "expo-clipboard";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { api } from "../../src/services/api";
-
-interface ParticipantMock {
-  id: string;
-  username: string;
-  isHost: boolean;
-}
 
 interface Participant {
   id: string;
@@ -36,18 +31,17 @@ interface RoomData {
   participants: Participant[];
 }
 
-const MOCK_PARTICIPANTS: ParticipantMock[] = [
-  { id: "1", username: "Você", isHost: true },
-];
-
 export default function RoomDetailsScreen() {
   const [isShareModalVisible, setIsShareModalVisible] = useState(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [room, setRoom] = useState<RoomData | null>(null);
-
   const [copied, setCopied] = useState(false);
 
-  const { id, name, code } = useLocalSearchParams<{
+  const {
+    id,
+    name: routeName,
+    code: routeCode,
+  } = useLocalSearchParams<{
     id: string;
     name?: string;
     code?: string;
@@ -55,18 +49,32 @@ export default function RoomDetailsScreen() {
 
   const router = useRouter();
 
-  const roomDeepLink = Linking.createURL(`room/${id}`, {
-    queryParams: { name, code },
-  });
+  const displayName = room?.name || routeName || "Detalhes do Rolê";
+  const displayCode = room?.code || routeCode || "------";
+  const participantsCount = room?.participants?.length || 0;
+
+  const baseUrl = api.defaults.baseURL?.replace(/\/$/, "") || "";
+  const inviteUrl = `${baseUrl}/invite/${id}?name=${encodeURIComponent(
+    displayName,
+  )}&code=${encodeURIComponent(displayCode)}`;
 
   const handleCopyLink = async () => {
     try {
-      await Clipboard.setStringAsync(roomDeepLink);
+      await Clipboard.setStringAsync(inviteUrl);
       setCopied(true);
-
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       Alert.alert("Erro", "Não foi possível copiar o link.");
+    }
+  };
+
+  const handleShareWhatsApp = async () => {
+    try {
+      await Share.share({
+        message: `Bora pro rolê "${displayName}"! Acesse o link para entrar na sala:\n\n${inviteUrl}`,
+      });
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível abrir o compartilhamento.");
     }
   };
 
@@ -79,14 +87,14 @@ export default function RoomDetailsScreen() {
         const response = await api.post(`/room/${id}/join`);
         const data = response.data;
 
-        const formattedParticipants: Participant[] = data.participants.map(
-          (p: any) => ({
-            id: p.user.id,
-            username: p.user.username,
-            avatarUrl: p.user.avatarUrl,
-            isHost: p.user.id === data.hostId,
-          }),
-        );
+        const formattedParticipants: Participant[] = (
+          data.participants || []
+        ).map((p: any) => ({
+          id: p.user?.id || p.id,
+          username: p.user?.username || p.username || "Participante",
+          avatarUrl: p.user?.avatarUrl || p.avatarUrl,
+          isHost: (p.user?.id || p.id) === data.hostId,
+        }));
 
         setRoom({
           id: data.id,
@@ -110,7 +118,7 @@ export default function RoomDetailsScreen() {
     joinAndLoadRoom();
   }, [id]);
 
-  if (isLoading) {
+  if (isLoading && !room) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#007AFF" />
@@ -122,18 +130,18 @@ export default function RoomDetailsScreen() {
     <SafeAreaView style={styles.container}>
       <Stack.Screen
         options={{
-          title: name || "Detalhes do Rolê",
+          title: displayName,
           headerBackTitle: "Voltar",
         }}
       />
 
       <View style={styles.content}>
         <View style={styles.infoCard}>
-          <Text style={styles.roomName}>{name || "Nome do Rolê"}</Text>
+          <Text style={styles.roomName}>{displayName}</Text>
           <View style={styles.codeContainer}>
             <Text style={styles.codeLabel}>Código da Sala:</Text>
             <View style={styles.codeBadge}>
-              <Text style={styles.codeText}>{code || "------"}</Text>
+              <Text style={styles.codeText}>{displayCode}</Text>
             </View>
           </View>
         </View>
@@ -148,26 +156,39 @@ export default function RoomDetailsScreen() {
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Participantes</Text>
-          <Text style={styles.participantCount}>
-            {MOCK_PARTICIPANTS.length}
-          </Text>
+          <Text style={styles.participantCount}>{participantsCount}</Text>
         </View>
 
         <View style={styles.membersCard}>
           <FlatList
-            data={room?.participants}
+            data={room?.participants || []}
             keyExtractor={(item) => item.id}
             ItemSeparatorComponent={() => <View style={styles.separator} />}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>
+                  Nenhum participante conectado.
+                </Text>
+              </View>
+            }
             renderItem={({ item }) => (
               <View style={styles.memberItem}>
                 <View style={styles.memberInfo}>
-                  <View style={styles.avatarPlaceholder}>
-                    <Text style={styles.avatarInitial}>
-                      {item.username.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
+                  {item.avatarUrl ? (
+                    <Image
+                      source={{ uri: item.avatarUrl }}
+                      style={styles.avatarImage}
+                    />
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <Text style={styles.avatarInitial}>
+                        {item.username.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
                   <Text style={styles.memberName}>{item.username}</Text>
                 </View>
+
                 {item.isHost && (
                   <View style={styles.hostBadge}>
                     <Text style={styles.hostBadgeText}>Host</Text>
@@ -183,7 +204,7 @@ export default function RoomDetailsScreen() {
           onPress={() =>
             router.push({
               pathname: "/expense",
-              params: { roomId: id, roomName: name },
+              params: { roomId: id, roomName: displayName },
             })
           }
           activeOpacity={0.8}
@@ -196,21 +217,23 @@ export default function RoomDetailsScreen() {
           onPress={() =>
             router.push({
               pathname: "/map/[roomId]",
-              params: { roomId: id, roomName: name },
+              params: { roomId: id, roomName: displayName },
             })
           }
           activeOpacity={0.8}
         >
           <Text style={styles.addMemberButtonText}>Geolocalização</Text>
         </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.splitButton}
           onPress={() =>
             router.push({
               pathname: `/gallery/${id}`,
-              params: { roomName: name },
+              params: { roomName: displayName },
             })
           }
+          activeOpacity={0.8}
         >
           <Text style={styles.addMemberButtonText}>Galeria do Rolê</Text>
         </TouchableOpacity>
@@ -226,8 +249,7 @@ export default function RoomDetailsScreen() {
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Convidar Galera</Text>
             <Text style={styles.modalSubtitle}>
-              Envie o link abaixo para os seus amigos entrarem direto neste
-              Rolê.
+              Envie o link abaixo para seus amigos entrarem direto neste Rolê.
             </Text>
 
             <View style={styles.linkContainer}>
@@ -236,11 +258,21 @@ export default function RoomDetailsScreen() {
                 numberOfLines={1}
                 ellipsizeMode="middle"
               >
-                {roomDeepLink}
+                {inviteUrl}
               </Text>
             </View>
 
             <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.shareDirectButton}
+                onPress={handleShareWhatsApp}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.shareDirectButtonText}>
+                  Compartilhar no WhatsApp
+                </Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 style={[styles.copyButton, copied && styles.copyButtonSuccess]}
                 onPress={handleCopyLink}
@@ -333,8 +365,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 12,
-    marginBottom: 12,
+    marginTop: 8,
+    marginBottom: 8,
   },
   addMemberButtonText: {
     color: "#FFF",
@@ -362,6 +394,15 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 16,
     elevation: 2,
+    maxHeight: 220,
+  },
+  emptyContainer: {
+    paddingVertical: 20,
+    alignItems: "center",
+  },
+  emptyText: {
+    color: "#94A3B8",
+    fontSize: 14,
   },
   memberItem: {
     flexDirection: "row",
@@ -372,6 +413,12 @@ const styles = StyleSheet.create({
   memberInfo: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  avatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginRight: 12,
   },
   avatarPlaceholder: {
     width: 36,
@@ -407,8 +454,6 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: "#F0F0F0",
   },
-
-  // Estilos do Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -450,6 +495,17 @@ const styles = StyleSheet.create({
   modalActions: {
     gap: 10,
   },
+  shareDirectButton: {
+    backgroundColor: "#25D366",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  shareDirectButtonText: {
+    color: "#FFF",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
   copyButton: {
     backgroundColor: "#007AFF",
     paddingVertical: 14,
@@ -457,7 +513,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   copyButtonSuccess: {
-    backgroundColor: "#34C759", // Cor verde ao copiar
+    backgroundColor: "#34C759",
   },
   copyButtonText: {
     color: "#FFF",

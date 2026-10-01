@@ -6,6 +6,7 @@ import {
 } from "../middlewares/auth.middleware.js";
 import { LocationService } from "../services/locationService.js";
 import { logger } from "../libs/logger.ts";
+import { redis } from "../libs/redis.ts";
 
 const router = Router();
 
@@ -118,7 +119,9 @@ router.get(
           code: true,
           name: true,
           hostId: true,
+          status: true,
           createdAt: true,
+          closedAt: true,
           _count: {
             select: { participants: true },
           },
@@ -313,6 +316,66 @@ router.post(
     }
 
     return res.status(200).json({ success: true });
+  },
+);
+
+router.patch(
+  "/:id/close",
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { id: roomId } = req.params;
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Não autenticado." });
+    }
+
+    if (!roomId || typeof roomId !== "string") {
+      return res.status(404).json({ error: "O rolê não existe" });
+    }
+
+    const participation = await prisma.roomParticipant.findUnique({
+      where: {
+        roomId_userId: {
+          roomId,
+          userId,
+        },
+      },
+    });
+
+    if (!participation) {
+      return res.status(403).json({
+        error: "Você precisa ser participante para finalizar o rolê.",
+      });
+    }
+
+    const updatedRoom = await prisma.room.update({
+      where: { id: roomId },
+      data: {
+        status: "closed",
+        closedAt: new Date(),
+      },
+    });
+
+    logger.info({
+      event: "ROOM_CLOSED",
+      roomId,
+      closedByUserId: userId,
+    });
+
+    await redis.del(`room:${roomId}:locations`);
+    await redis.del(`room:${roomId}:destination`);
+
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`room_${roomId}`).emit("room_status_changed", {
+        roomId,
+        status: "closed",
+        closedAt: updatedRoom.closedAt,
+      });
+    }
+
+    return res.json(updatedRoom);
   },
 );
 

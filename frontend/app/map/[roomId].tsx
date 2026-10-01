@@ -609,7 +609,6 @@ export default function RoomMapScreen() {
           </MapView>
         )}
 
-        {/* 🎯 Grupo de Ações Rápidas (Destino + Usuário) */}
         <View style={styles.mapActionsGroup}>
           {destination && (
             <TouchableOpacity
@@ -665,7 +664,7 @@ export default function RoomMapScreen() {
               <Text style={styles.statusText}>
                 {isSharing
                   ? "Transmitindo sua posição ao vivo"
-                  : "Seu local está oculto no rolê"}
+                  : "Sua posição está oculta no rolê"}
               </Text>
             </View>
 
@@ -687,11 +686,21 @@ export default function RoomMapScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>Amigos no Rolê</Text>
-            <View style={styles.onlineBadge}>
-              <Text style={styles.onlineBadgeText}>
-                {friendsListWithDistance.length} online
+          <View style={styles.headerRow}>
+            <View style={styles.titleContainer}>
+              <Text style={styles.microLabel}>AO VIVO NO ROLÊ</Text>
+              <Text
+                style={styles.roomNameTitle}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {roomName || "Mapa do Rolê"}
+              </Text>
+            </View>
+
+            <View style={styles.counterBadge}>
+              <Text style={styles.counterText}>
+                {friendsListWithDistance.length + 1} online
               </Text>
             </View>
           </View>
@@ -759,7 +768,7 @@ export default function RoomMapScreen() {
                   onPress={() => setShowAddressInput(true)}
                 >
                   <Text style={styles.openInputText}>
-                    + Definir Ponto de Encontro
+                    + Definir ponto de encontro
                   </Text>
                 </TouchableOpacity>
               )}
@@ -847,12 +856,12 @@ const styles = StyleSheet.create({
   permissionTitle: { fontSize: 16, fontWeight: "bold", color: "#1E293B" },
 
   mapSection: { width: "100%", position: "relative" },
-  mapHalf: { height: "48%" },
+  mapHalf: { height: "40%" },
   mapExpanded: { height: "100%" },
   map: { width: "100%", height: "100%" },
 
   bottomSection: {
-    height: "52%",
+    height: "60%",
     backgroundColor: "#F8FAFC",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -938,21 +947,42 @@ const styles = StyleSheet.create({
   actionButtonActive: { backgroundColor: "#EF4444" },
   actionButtonText: { color: "#FFF", fontSize: 14, fontWeight: "bold" },
 
-  listHeader: {
+  headerRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
-    paddingHorizontal: 4,
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  listTitle: { fontSize: 15, fontWeight: "700", color: "#1E293B" },
-  onlineBadge: {
+  titleContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
+  microLabel: {
+    fontSize: 8,
+    fontWeight: "700",
+    color: "#64748B",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
+  roomNameTitle: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#0F172A",
+  },
+  counterBadge: {
     backgroundColor: "#E2E8F0",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 12,
+    alignSelf: "center",
   },
-  onlineBadgeText: { fontSize: 11, color: "#475569", fontWeight: "700" },
+  counterText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#334155",
+  },
 
   friendsList: { flex: 1 },
   friendsListContent: { paddingBottom: 20 },
@@ -982,7 +1012,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#BFDBFE",
   },
-  distanceIcon: { fontSize: 12, marginRight: 4 },
   distanceText: { fontSize: 14, fontWeight: "700", color: "#1D4ED8" },
 
   emptyContainer: { alignItems: "center", paddingVertical: 28 },

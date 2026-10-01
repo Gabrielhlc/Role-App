@@ -234,7 +234,7 @@ export default function RoomGalleryScreen() {
           {isUploading ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <Text style={styles.uploadButtonText}>+ Adicionar</Text>
+            <Text style={styles.uploadButtonText}>Adicionar</Text>
           )}
         </TouchableOpacity>
       </View>

@@ -29,6 +29,7 @@ interface RoomData {
   code: string;
   hostId: string;
   participants: Participant[];
+  status: "active" | "closed" | string;
 }
 
 export default function RoomDetailsScreen() {
@@ -102,6 +103,7 @@ export default function RoomDetailsScreen() {
           code: data.code,
           hostId: data.hostId,
           participants: formattedParticipants,
+          status: data.status || "active",
         });
       } catch (error: any) {
         console.error("Erro ao carregar sala:", error);
@@ -117,6 +119,52 @@ export default function RoomDetailsScreen() {
 
     joinAndLoadRoom();
   }, [id]);
+
+  const isClosed = room?.status === "closed";
+
+  const handleCloseRoom = () => {
+    Alert.alert(
+      "Finalizar Rolê",
+      "Tem certeza de que deseja encerrar o rolê para todos? A geolocalização em tempo real será desativada, mas as despesas e a galeria continuarão disponíveis.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Finalizar",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              const response = await api.patch(`/room/${id}/close`);
+
+              setRoom((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      status: "closed",
+                      closedAt: response.data.closedAt,
+                    }
+                  : null,
+              );
+
+              Alert.alert(
+                "Rolê Encerrado",
+                "Este rolê foi marcado como finalizado.",
+              );
+            } catch (error: any) {
+              console.error("Erro ao fechar rolê:", error);
+              Alert.alert(
+                "Erro",
+                error.response?.data?.error ||
+                  "Não foi possível finalizar o rolê.",
+              );
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   if (isLoading && !room) {
     return (
@@ -137,7 +185,15 @@ export default function RoomDetailsScreen() {
 
       <View style={styles.content}>
         <View style={styles.infoCard}>
-          <Text style={styles.roomName}>{displayName}</Text>
+          <View style={styles.roomHeaderRow}>
+            <Text style={styles.roomName}>{displayName}</Text>
+            {isClosed && (
+              <View style={styles.closedBadge}>
+                <Text style={styles.closedBadgeText}>Encerrado</Text>
+              </View>
+            )}
+          </View>
+
           <View style={styles.codeContainer}>
             <Text style={styles.codeLabel}>Código da Sala:</Text>
             <View style={styles.codeBadge}>
@@ -146,13 +202,15 @@ export default function RoomDetailsScreen() {
           </View>
         </View>
 
-        <TouchableOpacity
-          style={styles.addMemberButton}
-          onPress={() => setIsShareModalVisible(true)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.addMemberButtonText}>Adicionar Membros</Text>
-        </TouchableOpacity>
+        {!isClosed && (
+          <TouchableOpacity
+            style={styles.addMemberButton}
+            onPress={() => setIsShareModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.addMemberButtonText}>+ Adicionar Membros</Text>
+          </TouchableOpacity>
+        )}
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Participantes</Text>
@@ -209,24 +267,26 @@ export default function RoomDetailsScreen() {
           }
           activeOpacity={0.8}
         >
-          <Text style={styles.addMemberButtonText}>Divisão de Conta</Text>
+          <Text style={styles.actionButtonText}>Divisão de Conta</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.splitButton}
-          onPress={() =>
-            router.push({
-              pathname: "/map/[roomId]",
-              params: { roomId: id, roomName: displayName },
-            })
-          }
-          activeOpacity={0.8}
-        >
-          <Text style={styles.addMemberButtonText}>Geolocalização</Text>
-        </TouchableOpacity>
+        {!isClosed && (
+          <TouchableOpacity
+            style={styles.mapButton}
+            onPress={() =>
+              router.push({
+                pathname: "/map/[roomId]",
+                params: { roomId: id, roomName: displayName },
+              })
+            }
+            activeOpacity={0.8}
+          >
+            <Text style={styles.actionButtonText}>Geolocalização</Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
-          style={styles.splitButton}
+          style={styles.galleryButton}
           onPress={() =>
             router.push({
               pathname: `/gallery/${id}`,
@@ -235,8 +295,18 @@ export default function RoomDetailsScreen() {
           }
           activeOpacity={0.8}
         >
-          <Text style={styles.addMemberButtonText}>Galeria do Rolê</Text>
+          <Text style={styles.actionButtonText}>Galeria do Rolê</Text>
         </TouchableOpacity>
+
+        {!isClosed && (
+          <TouchableOpacity
+            style={styles.closeRoomButton}
+            onPress={handleCloseRoom}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.closeRoomButtonText}>Finalizar Rolê</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <Modal
@@ -311,31 +381,50 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 12,
   },
   infoCard: {
     backgroundColor: "#FFF",
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+    padding: 16,
+    marginBottom: 12,
     elevation: 2,
   },
+  roomHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
   roomName: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "bold",
     color: "#1A1A1A",
-    marginBottom: 12,
+    flex: 1,
+    marginRight: 8,
+  },
+  closedBadge: {
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  closedBadgeText: {
+    color: "#DC2626",
+    fontSize: 11,
+    fontWeight: "bold",
+    textTransform: "uppercase",
   },
   codeContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: "#F8F9FA",
-    padding: 12,
-    borderRadius: 10,
+    padding: 10,
+    borderRadius: 8,
   },
   codeLabel: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#666",
   },
   codeBadge: {
@@ -345,7 +434,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   codeText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "bold",
     color: "#007AFF",
     letterSpacing: 1,
@@ -353,39 +442,29 @@ const styles = StyleSheet.create({
   addMemberButton: {
     backgroundColor: "#007AFF",
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 12,
-    marginBottom: 24,
-  },
-  splitButton: {
-    backgroundColor: "#008643",
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-    marginBottom: 8,
+    marginBottom: 16,
   },
   addMemberButtonText: {
     color: "#FFF",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "bold",
   },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "bold",
     color: "#1A1A1A",
   },
   participantCount: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#888",
     fontWeight: "600",
   },
@@ -394,40 +473,41 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 16,
     elevation: 2,
-    maxHeight: 220,
+    maxHeight: 180,
+    marginBottom: 12,
   },
   emptyContainer: {
-    paddingVertical: 20,
+    paddingVertical: 16,
     alignItems: "center",
   },
   emptyText: {
     color: "#94A3B8",
-    fontSize: 14,
+    fontSize: 13,
   },
   memberItem: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
   memberInfo: {
     flexDirection: "row",
     alignItems: "center",
   },
   avatarImage: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    marginRight: 12,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    marginRight: 10,
   },
   avatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: "#E2E8F0",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    marginRight: 10,
   },
   avatarInitial: {
     fontSize: 14,
@@ -435,18 +515,18 @@ const styles = StyleSheet.create({
     color: "#475569",
   },
   memberName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "500",
     color: "#333",
   },
   hostBadge: {
     backgroundColor: "#E6F4EA",
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 6,
   },
   hostBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#137333",
     fontWeight: "600",
   },
@@ -454,6 +534,57 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: "#F0F0F0",
   },
+
+  // Botões de Ação Principais
+  splitButton: {
+    backgroundColor: "#059669", // Verde esmeralda para finanças
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  mapButton: {
+    backgroundColor: "#0284C7", // Azul oceano para GPS
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  galleryButton: {
+    backgroundColor: "#6366F1", // Roxo/Índigo para mídia
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  actionButtonText: {
+    color: "#FFF",
+    fontSize: 15,
+    fontWeight: "bold",
+  },
+
+  // Botão de Finalizar Rolê
+  closeRoomButton: {
+    backgroundColor: "#FFF",
+    borderWidth: 1.5,
+    borderColor: "#EF4444",
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  closeRoomButtonText: {
+    color: "#EF4444",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+
+  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

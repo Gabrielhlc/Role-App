@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -6,14 +6,14 @@ import {
   ActivityIndicator,
   Image,
   TouchableOpacity,
-  FlatList,
+  ScrollView,
   Modal,
   TextInput,
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "../../src/services/api";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { useAuth } from "../../src/contexts/AuthContext";
 
@@ -27,6 +27,7 @@ interface Room {
   id: string;
   code: string;
   name: string;
+  status?: "active" | "closed" | string;
 }
 
 export default function Home() {
@@ -39,7 +40,6 @@ export default function Home() {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
 
   const { signOut } = useAuth();
-
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -65,17 +65,14 @@ export default function Home() {
         name: newRoomName.trim(),
       });
 
-      const createdRoom: Room = res.data;
+      const createdRoom: Room = {
+        ...res.data,
+        status: res.data.status || "active",
+      };
 
       setRooms((prevRooms) => [createdRoom, ...prevRooms]);
-
       setNewRoomName("");
       setIsModalVisible(false);
-
-      // Alert.alert(
-      //   "Sucesso!",
-      //   `A sala "${createdRoom.name}" foi criada com o código ${createdRoom.code}`,
-      // );
 
       router.push({
         pathname: "/room/[id]",
@@ -112,9 +109,11 @@ export default function Home() {
     }
   };
 
-  useEffect(() => {
-    fetchUserAndRooms();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserAndRooms();
+    }, []),
+  );
 
   if (isLoading) {
     return (
@@ -127,6 +126,20 @@ export default function Home() {
   const userInitial = user?.username
     ? user.username.charAt(0).toUpperCase()
     : "U";
+
+  const activeRooms = rooms.filter((r) => r.status !== "closed");
+  const closedRooms = rooms.filter((r) => r.status === "closed");
+
+  const navigateToRoom = (room: Room) => {
+    router.push({
+      pathname: "/room/[id]",
+      params: {
+        id: room.id,
+        name: room.name,
+        code: room.code,
+      },
+    });
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -149,44 +162,87 @@ export default function Home() {
       </View>
 
       <View style={styles.content}>
-        <Text style={styles.sectionTitle}>Seus Rolês</Text>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Rolês Ativos</Text>
+            <View style={styles.countBadge}>
+              <Text style={styles.countBadgeText}>{activeRooms.length}</Text>
+            </View>
+          </View>
 
-        <View style={styles.card}>
-          <FlatList
-            data={rooms}
-            keyExtractor={(item) => item.id}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.roomItem}
-                activeOpacity={0.7}
-                onPress={() => {
-                  router.push({
-                    pathname: "/room/[id]",
-                    params: {
-                      id: item.id,
-                      name: item.name,
-                      code: item.code,
-                    },
-                  });
-                }}
-              >
-                <View style={styles.roomInfo}>
-                  <Text style={styles.roomName}>{item.name}</Text>
-                  <Text style={styles.roomCode}>Código: {item.code}</Text>
-                </View>
-                <Text style={styles.chevron}>›</Text>
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={
+          <View style={styles.card}>
+            {activeRooms.length > 0 ? (
+              activeRooms.map((item, index) => (
+                <React.Fragment key={item.id}>
+                  <TouchableOpacity
+                    style={styles.roomItem}
+                    activeOpacity={0.7}
+                    onPress={() => navigateToRoom(item)}
+                  >
+                    <View style={styles.roomInfo}>
+                      <Text style={styles.roomName}>{item.name}</Text>
+                      <Text style={styles.roomCode}>Código: {item.code}</Text>
+                    </View>
+                    <Text style={styles.chevron}>›</Text>
+                  </TouchableOpacity>
+                  {index < activeRooms.length - 1 && (
+                    <View style={styles.separator} />
+                  )}
+                </React.Fragment>
+              ))
+            ) : (
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>
-                  Você ainda não participa de nenhuma sala.
+                  Nenhum rolê ativo no momento.
                 </Text>
               </View>
-            }
-          />
-        </View>
+            )}
+          </View>
+
+          {closedRooms.length > 0 && (
+            <>
+              <View style={[styles.sectionHeaderRow, { marginTop: 24 }]}>
+                <Text style={[styles.sectionTitle, styles.closedSectionTitle]}>
+                  Rolês Finalizados
+                </Text>
+                <View style={[styles.countBadge, styles.closedCountBadge]}>
+                  <Text style={styles.closedCountBadgeText}>
+                    {closedRooms.length}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={[styles.card, styles.closedCard]}>
+                {closedRooms.map((item, index) => (
+                  <React.Fragment key={item.id}>
+                    <TouchableOpacity
+                      style={styles.roomItem}
+                      activeOpacity={0.7}
+                      onPress={() => navigateToRoom(item)}
+                    >
+                      <View style={styles.roomInfo}>
+                        <View style={styles.closedTitleRow}>
+                          <Text style={styles.closedRoomName}>{item.name}</Text>
+                          <View style={styles.closedPill}>
+                            <Text style={styles.closedPillText}>Encerrado</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.roomCode}>Código: {item.code}</Text>
+                      </View>
+                      <Text style={styles.chevron}>›</Text>
+                    </TouchableOpacity>
+                    {index < closedRooms.length - 1 && (
+                      <View style={styles.separator} />
+                    )}
+                  </React.Fragment>
+                ))}
+              </View>
+            </>
+          )}
+        </ScrollView>
       </View>
 
       <View style={styles.footer}>
@@ -195,14 +251,14 @@ export default function Home() {
           onPress={() => setIsModalVisible(true)}
           activeOpacity={0.8}
         >
-          <Text style={styles.createButtonText}>Criar Novo Rolê</Text>
+          <Text style={styles.createButtonText}>+ Criar Novo Rolê</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.logoutButton}
           onPress={handleLogout}
           activeOpacity={0.8}
         >
-          <Text style={styles.createButtonText}>Sair</Text>
+          <Text style={styles.logoutButtonText}>Sair</Text>
         </TouchableOpacity>
       </View>
 
@@ -268,8 +324,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F4F5F7",
   },
   header: {
-    paddingVertical: 16,
-    marginBottom: 8,
+    paddingVertical: 14,
   },
   userInfo: {
     flexDirection: "row",
@@ -307,25 +362,55 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    marginTop: 8,
+  },
+  scrollContent: {
+    paddingBottom: 16,
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "bold",
     color: "#1A1A1A",
-    marginBottom: 12,
+  },
+  closedSectionTitle: {
+    color: "#64748B",
+  },
+  countBadge: {
+    backgroundColor: "#E2E8F0",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  countBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  closedCountBadge: {
+    backgroundColor: "#F1F5F9",
+  },
+  closedCountBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#94A3B8",
   },
   card: {
     backgroundColor: "#FFF",
     borderRadius: 16,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    paddingVertical: 4,
     elevation: 2,
-    maxHeight: 380,
+  },
+  closedCard: {
+    backgroundColor: "#FAFAFA",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    elevation: 0,
   },
   roomItem: {
     flexDirection: "row",
@@ -340,6 +425,28 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#222",
+  },
+  closedTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  closedRoomName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  closedPill: {
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  closedPillText: {
+    color: "#EF4444",
+    fontSize: 10,
+    fontWeight: "bold",
+    textTransform: "uppercase",
   },
   roomCode: {
     fontSize: 12,
@@ -360,43 +467,40 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   emptyText: {
-    color: "#888",
+    color: "#94A3B8",
     fontSize: 14,
   },
   footer: {
-    paddingVertical: 16,
+    paddingTop: 10,
+    paddingBottom: 8,
   },
   createButton: {
     backgroundColor: "#007AFF",
     borderRadius: 14,
-    paddingVertical: 16,
+    paddingVertical: 15,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#007AFF",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
-    marginBottom: 12,
-  },
-  logoutButton: {
-    backgroundColor: "#FF3B30",
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#FF3B30",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
+    marginBottom: 8,
   },
   createButtonText: {
     color: "#FFF",
     fontSize: 16,
     fontWeight: "bold",
   },
-  // Estilos do Modal
+  logoutButton: {
+    backgroundColor: "#F1F5F9",
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logoutButtonText: {
+    color: "#EF4444",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

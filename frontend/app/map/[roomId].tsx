@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import * as TaskManager from "expo-task-manager";
+import { LOCATION_BACKGROUND_TASK } from "../../src/services/backgroundLocation";
 import {
   StyleSheet,
   Text,
@@ -116,7 +118,7 @@ export default function RoomMapScreen() {
   const [isSharing, setIsSharing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [tracksViewChanges, setTracksViewChanges] = useState(true);
-  const [user, setUser] = useState<User>({} as User);
+  const [user, setUser] = useState<User | null>(null);
 
   const [destination, setDestination] = useState<Destination | null>(null);
   const [searchAddress, setSearchAddress] = useState("");
@@ -144,8 +146,8 @@ export default function RoomMapScreen() {
     fetchUser();
   }, []);
 
-  const currentUserId = user.id || "user_me_dev";
-  const currentUsername = user.username || "Você";
+  const currentUserId = user?.id || null;
+  const currentUsername = user?.username || "Você";
 
   useEffect(() => {
     setTracksViewChanges(true);
@@ -163,7 +165,18 @@ export default function RoomMapScreen() {
   };
 
   useEffect(() => {
-    if (!roomId) return;
+    async function checkSharingStatus() {
+      const isRunning = await TaskManager.isTaskRegisteredAsync(
+        LOCATION_BACKGROUND_TASK,
+      );
+      setIsSharing(isRunning);
+    }
+
+    checkSharingStatus();
+  }, []);
+
+  useEffect(() => {
+    if (!roomId || !currentUserId) return;
 
     if (!socket.connected) {
       socket.connect();
@@ -179,7 +192,10 @@ export default function RoomMapScreen() {
       (activeList: ParticipantLocation[]) => {
         const initialMap: Record<string, ParticipantLocation> = {};
         activeList.forEach((u) => {
-          if (u.userId !== currentUserId) {
+          const isMe =
+            String(u.userId) === String(currentUserId) ||
+            u.userId === "user_me_dev";
+          if (!isMe) {
             initialMap[u.userId] = u;
           }
         });
@@ -188,7 +204,10 @@ export default function RoomMapScreen() {
     );
 
     socket.on("user_location_updated", (data: ParticipantLocation) => {
-      if (data.userId === currentUserId) return;
+      const isMe =
+        String(data.userId) === String(currentUserId) ||
+        data.userId === "user_me_dev";
+      if (isMe) return;
       setParticipants((prev) => ({
         ...prev,
         [data.userId]: data,
@@ -217,22 +236,17 @@ export default function RoomMapScreen() {
     );
 
     return () => {
-      if (isSharingRef.current) {
-        socket.emit("stop_sharing_location", {
-          roomId,
-          userId: currentUserId,
-        });
-      }
       socket.off("room_locations_snapshot");
       socket.off("user_location_updated");
       socket.off("user_stopped_sharing");
       socket.off("room_destination_updated");
       socket.off("room_destination_cleared");
-      socket.disconnect();
     };
   }, [roomId, currentUserId]);
 
   useEffect(() => {
+    if (!currentUserId) return;
+
     let locationSubscription: Location.LocationSubscription | null = null;
 
     const startTracking = async () => {
@@ -281,7 +295,7 @@ export default function RoomMapScreen() {
                 roomId,
                 userId: currentUserId,
                 username: currentUsername,
-                avatarUrl: user.avatarUrl,
+                avatarUrl: user?.avatarUrl,
                 latitude: coords.latitude,
                 longitude: coords.longitude,
               });
@@ -301,7 +315,7 @@ export default function RoomMapScreen() {
         locationSubscription.remove();
       }
     };
-  }, [roomId, currentUserId, currentUsername, user.avatarUrl]);
+  }, [roomId, currentUserId, currentUsername, user?.avatarUrl]);
 
   const handleToggleSharing = async () => {
     if (!isSharing) {
@@ -329,7 +343,7 @@ export default function RoomMapScreen() {
 
         await startBackgroundTracking(roomId, {
           username: currentUsername,
-          avatarUrl: user.avatarUrl,
+          avatarUrl: user?.avatarUrl,
         });
 
         setIsSharing(true);
@@ -339,7 +353,7 @@ export default function RoomMapScreen() {
             roomId,
             userId: currentUserId,
             username: currentUsername,
-            avatarUrl: user.avatarUrl,
+            avatarUrl: user?.avatarUrl,
             latitude: currentCoords.latitude,
             longitude: currentCoords.longitude,
           });
@@ -459,6 +473,11 @@ export default function RoomMapScreen() {
 
   const friendsListWithDistance = useMemo(() => {
     return Object.values(participants)
+      .filter(
+        (friend) =>
+          String(friend.userId) !== String(currentUserId) &&
+          friend.userId !== "user_me_dev",
+      )
       .map((friend) => {
         let distanceMeters = 0;
         if (currentCoords) {
@@ -478,7 +497,7 @@ export default function RoomMapScreen() {
         };
       })
       .sort((a, b) => a.distanceMeters - b.distanceMeters);
-  }, [participants, currentCoords]);
+  }, [participants, currentCoords, currentUserId]);
 
   if (isLoading) {
     return (

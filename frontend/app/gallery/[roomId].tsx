@@ -75,7 +75,12 @@ export default function RoomGalleryScreen() {
     socket.emit("join_room", { roomId });
 
     const handleNewMedia = (newMedia: RoomMediaItem) => {
-      setMediaList((prev) => [newMedia, ...prev]);
+      setMediaList((prev) => {
+        if (prev.some((item) => item.id === newMedia.id)) {
+          return prev;
+        }
+        return [newMedia, ...prev];
+      });
     };
 
     socket.on("new_media_uploaded", handleNewMedia);
@@ -127,16 +132,6 @@ export default function RoomGalleryScreen() {
           return [newMedia, ...prev];
         });
       }
-
-      await uploadMediaToRoom({
-        roomId,
-        userId: currentUserId,
-        uri: asset.uri,
-        type: asset.type === "video" ? "video" : "image",
-        mimeType:
-          asset.mimeType ||
-          (asset.type === "video" ? "video/mp4" : "image/jpeg"),
-      });
     } catch (error: any) {
       console.error("Falha no upload:", error);
       Alert.alert(
